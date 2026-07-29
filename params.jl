@@ -7,11 +7,11 @@
 # So, if a parameter is given multiple values, all other parameters must either have the same length or length 1
 
 Re_values       = [8e5]     # Reynolds number
-Ri_values       = [0.15]    # Richardson number
+Ri_values       = [0.22]  # Richardson number
 Pr_values       = [700]     # Prandtl number
 Lz_values       = [10]       # Domain height
-Nx_values       = [12000]    # Number of grid points in x-direction
-Nz_values       = [12000]    # Number of grid points in z-direction
+Nx_values       = [4000]  # Number of grid points in x-direction
+Nz_values       = [200]    # Number of grid points in z-direction
 efgm_values     = [1e-4]    # Fraction of background energy in the initial perturbation
 enoise_values   = [1e-6]    # Noise amplitude in initial conditions         
-T_values        = [60]      # Simulation duration
+T_values        = [120]      # Simulation duration

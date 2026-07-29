@@ -3,7 +3,7 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
     # Load initial condition which includes flow parameters
     @load lin_stab_out_file * ".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z Ri Re Pr iBC1 iBCN Lz
 
-    Lx = 2 * pi / k_max # one billow
+    Lx = 400 # Change this to be long rather than how it was before (2 pi/k_max)
     stretch = 1
 
     @info "Grid setup..."
@@ -38,7 +38,7 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
         zz = (-Lz / 2, Lz / 2)
     end
     grid = RectilinearGrid(GPU(), size=(Nx, Nz), x=(-Lx / 2, Lx / 2), z=zz,
-        topology=(Oceananigans.Periodic, Oceananigans.Flat, Oceananigans.Bounded))
+        topology=(Oceananigans.Bounded, Oceananigans.Flat, Oceananigans.Bounded))  ## HERE I CHANGED THE TOPOLOGY FROM PERIODIC TO BOUNDED IN X
     grid_time = (time_ns() - grid_start_time) * 1e-9
     @info "   completed in $(prettytime(grid_time))"
     # No boundary conditions explicitly set - the BCs will default to free-slip and no-flux in z
@@ -46,11 +46,12 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
     # Now, define a 'model' where we specify the grid, advection scheme, bcs, and other settings
     @info "Model setup..."
     model_start_time = time_ns()
-    buoyancy = BuoyancyForce(BuoyancyTracer(), gravity_unit_vector=[0, 0, -1])
-    model = NonhydrostaticModel(; grid,
+    θ = 10# Angle of the domain (in degrees) relative to the horizontal
+    buoyancy = BuoyancyForce(BuoyancyTracer(), gravity_unit_vector=[sind(θ),0,-cosd(θ)])
+    model = NonhydrostaticModel( grid,
         advection=WENO(),  # WENO advection scheme (more accurate but slower than e.g. UpwindBiasedFifthOrder())
         timestepper=:RungeKutta3, # 3rd order Runge-Kutta time-stepping
-        tracers=(:b),  # name(s) of any tracers; here b is buoyancy
+        tracers=:b,  # name(s) of any tracers; here b is buoyancy
         buoyancy=buoyancy, # buoyancy acts on momentum. Use BuoyancyTracer() (rather than Buoyancy(model=BuoyancyTracer())) for compatibility with current Oceananigans on GPU.
         closure=(ScalarDiffusivity(ν=1 / Re, κ=1 / (Re * Pr))),  # sets kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
         coriolis=nothing # this line tells the mdoel not to include system rotation (no Coriolis acceleration)
@@ -75,7 +76,7 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
     b_init(x, z) = real(b_hat_interp(z) * exp.(im * k_max .* x .- im * shift .+ im * pi / 2))
 
     # Here, we start with a tanh function for buoyancy and add an FGM perturbation + a random perturbations
-    uᵢ(x, z) = tanh.(z) + u_init(x, z) + sqrt(enoise) * randn()
+    uᵢ(x, z) = 0 # originally was tanh.(z) + u_init(x, z) + sqrt(enoise) * randn()
     vᵢ(x, z) = 0
     wᵢ(x, z) = w_init(x, z) + sqrt(enoise) * randn()
     bᵢ(x, z) = Ri * tanh.(z) + b_init(x, z) + Ri * sqrt(enoise) * randn()

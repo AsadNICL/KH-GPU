@@ -81,6 +81,7 @@ for irun in 1:nruns
     today_str = Dates.format(today(), "yyyy-mm-dd")
     today_str = replace(today_str, "-" => "") # to match the required format
     base_path = pwd() # should be the KH_GPU_sweep directory
+
     out_path = joinpath(base_path, "out")
     lin_stab_out_name = @sprintf("KH_lin_stab_Re=%.1e_Ri=%0.2f_Pr=%d_Lz=%d_efgm=%.1e",
         Re, Ri, Pr, Lz, efgm)
@@ -100,7 +101,7 @@ for irun in 1:nruns
     KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dns_out_file)
 
     # Generate plots after simulation completion
-    plot_KH(dns_out_file)
+    plot_KH_b_only(dns_out_file, Lz, Re)
     @info "-----------------------------------------------"
 end
 
