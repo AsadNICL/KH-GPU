@@ -1,8 +1,8 @@
-function lin_stab_from_params(Re, Ri, Pr, Lz, fgm, lin_stab_out_file)
+function lin_stab_from_params(nu, gred, delta, Pr, Lz, efgm, lin_stab_out_file)
     Nz = 600
     z = LinRange(-Lz/2, Lz/2, Nz)
     U = tanh.(z)
-    B = Ri * tanh.(z)
+    B = gred/2 * tanh.(z/delta)
 
     @info "Linear stability computation..."
     lin_stab_start_time = time_ns()
@@ -19,7 +19,7 @@ function lin_stab_from_params(Re, Ri, Pr, Lz, fgm, lin_stab_out_file)
 
     Threads.@threads for k in eachindex(K)
         k_val = K[k]
-        (sigma[k], lambda_w[:, k], lambda_b[:, k]) = SSF(z, U, B, k_val, 0, 1/Re, 1/(Pr*Re), iBC1, iBCN, 1)
+        (sigma[k], lambda_w[:, k], lambda_b[:, k]) = SSF(z, U, B, k_val, 0, nu, nu/(Pr), iBC1, iBCN, 1)
     end
 
     k_index_max = argmax(real.(sigma)) # index of the k with the maximum real growth rate
@@ -37,7 +37,7 @@ function lin_stab_from_params(Re, Ri, Pr, Lz, fgm, lin_stab_out_file)
     # Rescale to a target energy
     background_energy = mean(1/2 *( U[nz1:nz2].^2+B[nz1:nz2].^2))
     mean_perturbation_energy = mean(1/2 *( abs2.(u_hat[nz1:nz2]) + abs2.(w_hat[nz1:nz2])+ abs2.(b_hat[nz1:nz2])))
-    target_energy =fgm*background_energy
+    target_energy = efgm * background_energy
     scaling_factor = sqrt(target_energy / mean_perturbation_energy)
 
     w_hat*=scaling_factor
@@ -46,7 +46,7 @@ function lin_stab_from_params(Re, Ri, Pr, Lz, fgm, lin_stab_out_file)
 
     # write output file
     Nz_lin_stab = Nz
-    @save lin_stab_out_file*".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z Ri Re Pr iBC1 iBCN Lz Nz_lin_stab
+    @save lin_stab_out_file*".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z gred nu delta Pr iBC1 iBCN Lz Nz_lin_stab
     lin_stab_time = (time_ns() - lin_stab_start_time) * 1e-9
     @info "   completed in $(prettytime(lin_stab_time))"
     @info "   results saved in $lin_stab_out_file"

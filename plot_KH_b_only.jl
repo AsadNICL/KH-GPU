@@ -1,6 +1,6 @@
 # Reads in the JLD2 output written by KH_from_params.jl and saves a buoyancy-only animation
 # (lighter alternative to plot_KH.jl which also plots log10(chi)).
-function plot_KH_b_only(filename,Lz,Re)
+function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animation=true, save_ri_re=true, ri_re_filename="Ri_vs_Re.png")
 
     @info "Generating plots..."
     plot_start_time = time_ns()
@@ -15,10 +15,13 @@ function plot_KH_b_only(filename,Lz,Re)
     xlims = (minimum(xb), maximum(xb))
     ylims = (minimum(zb), maximum(zb))
 
-    # NEED THIS TO FIND GRAD RICHARDSON NO AT ORIGIN
-    ix = argmin(abs.(xb .- 0.0))
-    iz = argmin(abs.(zb .- 0.0))
-
+    Lx = maximum(xb) - minimum(xb)
+    x_inds = findall(abs.(xb) .<= Lx / 20)
+    z_inds = findall(abs.(zb) .<= delta / 2)
+    z_inds = filter(i -> i > 1 && i < length(zb), z_inds)
+    if isempty(x_inds) || isempty(z_inds)
+        error("No grid points found in Richardson region for delta=$(delta) and Lx=$(Lx)")
+    end
 
     # Now, open the file with our data
     file_xz = jldopen(filename * ".jld2")
@@ -51,22 +54,31 @@ function plot_KH_b_only(filename,Lz,Re)
         # @info "Drawing frame $i from iteration $iter..."
 
         # Load data for this iteration
-        # 2 LINES BELOW ARE NEW
         u_xz = file_xz["timeseries/u/$iter"][:,1,:];
         w_xz = file_xz["timeseries/w/$iter"][:,1,:];
         b_xz = file_xz["timeseries/b/$iter"][:, 1, :];
         t = file_xz["timeseries/t/$iter"];
-        #NEXT FIVE LINES ARE NEW
-        dz = zb[iz+1] - zb[iz-1];
-        dbdz = (b_xz[ix, iz+1] - b_xz[ix, iz-1]) / dz;
-        dudz = (u_xz[ix, iz+1] - u_xz[ix, iz-1]) / dz;
+
+        # Compute Richardson over the requested region and take the RMS
+        nx = length(x_inds)
+        nz = length(z_inds)
+        Ri_region = zeros(Float64, nx, nz)
+        for (ix_idx, ix_val) in enumerate(x_inds)
+            for (iz_idx, iz_val) in enumerate(z_inds)
+                dz = zb[iz_val+1] - zb[iz_val-1]
+                dbdz = (b_xz[ix_val, iz_val+1] - b_xz[ix_val, iz_val-1]) / dz
+                dudz = (u_xz[ix_val, iz_val+1] - u_xz[ix_val, iz_val-1]) / dz
+                Ri_region[ix_idx, iz_idx] = dbdz / (dudz^2 + 1e-12)
+            end
+        end
+        Ri_rms = sqrt(mean(Ri_region .^ 2))
+
         Urms = sqrt(mean(u_xz.^2) + mean(w_xz.^2))
-        Re_inst = Urms * Lz * Re
+        Re_inst = Urms * Lz / nu
 
         # Store values for time tracking
         push!(times, t)
-        # NEW LINE BELOW
-        push!(Rig, dbdz / (dudz^2 + 1e-12))
+        push!(Rig, Ri_rms)
         push!(Reynolds, Re_inst)
 
         # Create titles
@@ -91,16 +103,25 @@ function plot_KH_b_only(filename,Lz,Re)
     end
 
    #richplot = plot(times, Rig, xlabel = "Time", ylabel = "Ri", lw = 2, legend = false, title = "Gradient Richardson number at origin", xlims = (0, maximum(times)), ylims = (0, 1), size = (800, 400))
-    Ri_Re_plot = plot(Reynolds, Rig, xlabel = "Reynolds number", ylabel = "Gradient Richardson number", lw = 2, legend = false, title = "Ri vs Re", xlims = (0, maximum(Reynolds)), ylims = (0, 1), size = (800, 400))
+    Ri_Re_plot = plot(Reynolds, Rig, xlabel = "Reynolds number", ylabel = "Gradient Richardson number", lw = 2, legend = false, title = "Ri vs Reynolds", xscale = :log10, yscale = :log10, xlims = (minimum(Reynolds[Reynolds .> 0]), maximum(Reynolds)), ylims = (minimum(Rig[Rig .> 0]), maximum(Rig)), size = (800, 400))
 
     close(file_xz)
 
     # Save the animation to a file
-    mp4(anim, filename*".mp4", fps = 10) 
-    #savefig(richplot, "Ri_evolution.png")
-    savefig(Ri_Re_plot, "Ri_vs_Re.png")
+    if save_animation
+        mp4(anim, filename*".mp4", fps = 10)
+    end
+
+    if save_ri_re
+        if ri_re_filename == "Ri_vs_Re.png" && run_label != ""
+            ri_re_filename = "Ri_vs_Re_$(run_label).png"
+        end
+        savefig(Ri_Re_plot, ri_re_filename)
+    end
 
     # Display plot time
     plot_time = (time_ns() - plot_start_time) * 1e-9
     @info "   Plots completed in $(prettytime(plot_time))"
+
+    return Reynolds, Rig
 end  

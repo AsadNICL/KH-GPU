@@ -1,7 +1,7 @@
-function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dns_out_file)
+function KH_from_params(nu, gred, delta, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dns_out_file)
 
     # Load initial condition which includes flow parameters
-    @load lin_stab_out_file * ".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z Ri Re Pr iBC1 iBCN Lz
+    @load lin_stab_out_file * ".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z gred nu delta Pr iBC1 iBCN Lz
 
     Lx = 400 # Change this to be long rather than how it was before (2 pi/k_max)
     stretch = 1
@@ -53,7 +53,7 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
         timestepper=:RungeKutta3, # 3rd order Runge-Kutta time-stepping
         tracers=:b,  # name(s) of any tracers; here b is buoyancy
         buoyancy=buoyancy, # buoyancy acts on momentum. Use BuoyancyTracer() (rather than Buoyancy(model=BuoyancyTracer())) for compatibility with current Oceananigans on GPU.
-        closure=(ScalarDiffusivity(ν=1 / Re, κ=1 / (Re * Pr))),  # sets kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
+        closure=(ScalarDiffusivity(ν= nu, κ=nu / (Pr))),  # sets kinematic viscosity and diffusivty, here just 1/Re since we are solving the non-dimensional equations 
         coriolis=nothing # this line tells the mdoel not to include system rotation (no Coriolis acceleration)
     )
 
@@ -79,7 +79,7 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
     uᵢ(x, z) = 0 # originally was tanh.(z) + u_init(x, z) + sqrt(enoise) * randn()
     vᵢ(x, z) = 0
     wᵢ(x, z) = w_init(x, z) + sqrt(enoise) * randn()
-    bᵢ(x, z) = Ri * tanh.(z) + b_init(x, z) + Ri * sqrt(enoise) * randn()
+    bᵢ(x, z) = gred/2 * tanh.(z/delta) + b_init(x, z) + gred * sqrt(enoise) * randn()
 
     # Send the initial conditions to the model to initialize the variables
     set!(model, u=uᵢ, v=vᵢ, w=wᵢ, b=bᵢ)
@@ -124,8 +124,8 @@ function KH_from_params(Re, Ri, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dn
     # Oceananigans has functions to calculate derivatives on the model grid˚
     outputs_start_time = time_ns()
     # ω = ∂z(u) - ∂x(w) # The spanwise vorticity (uncomment to also save)
-    χ = (1 / (Re * Pr)) * (∂x(b)^2 + ∂z(b)^2) # The dissipation rate of buoyancy variance
-    ϵ = (1 / Re) * (2 * ∂x(u)^2 + 2 * ∂z(w)^2 + ∂x(w)^2 + ∂z(u)^2 + 2 * ∂z(u) * ∂x(w)) # The dissipation rate of kinetic energy, using the full strain rate tensor
+    χ = (nu / ( Pr)) * (∂x(b)^2 + ∂z(b)^2) # The dissipation rate of buoyancy variance
+    ϵ = nu * (2 * ∂x(u)^2 + 2 * ∂z(w)^2 + ∂x(w)^2 + ∂z(u)^2 + 2 * ∂z(u) * ∂x(w)) # The dissipation rate of kinetic energy, using the full strain rate tensor
     outputs_time = (time_ns() - outputs_start_time) * 1e-9
     @info "   completed in $(prettytime(outputs_time))"
 
