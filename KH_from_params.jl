@@ -1,9 +1,9 @@
-function KH_from_params(nu, gred, delta, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out_file, dns_out_file)
+function KH_from_params(nu, gred, delta, Pr, Lz, Lx, Nx, Nz, enoise, T, lin_stab_out_file, dns_out_file;
+    initial_tilt_angle::Real=3.0, rotate_back_to_horizontal::Bool=true, rotation_time::Real=14.0)
 
     # Load initial condition which includes flow parameters
     @load lin_stab_out_file * ".jld2" sigma sigma_max K k_max u_hat w_hat b_hat U B z gred nu delta Pr iBC1 iBCN Lz
 
-    Lx = 400 # Change this to be long rather than how it was before (2 pi/k_max)
     stretch = 1
 
     @info "Grid setup..."
@@ -46,8 +46,9 @@ function KH_from_params(nu, gred, delta, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out
     # Now, define a 'model' where we specify the grid, advection scheme, bcs, and other settings
     @info "Model setup..."
     model_start_time = time_ns()
-    θ = 10# Angle of the domain (in degrees) relative to the horizontal
-    buoyancy = BuoyancyForce(BuoyancyTracer(), gravity_unit_vector=[sind(θ),0,-cosd(θ)])
+    θ_initial = initial_tilt_angle # initial angle of the domain (in degrees) relative to the horizontal
+    θ_final = 0.0    # tilt after t = 12
+    buoyancy = BuoyancyForce(BuoyancyTracer(), gravity_unit_vector=[sind(θ_initial),0,-cosd(θ_initial)])
     model = NonhydrostaticModel( grid,
         advection=WENO(),  # WENO advection scheme (more accurate but slower than e.g. UpwindBiasedFifthOrder())
         timestepper=:RungeKutta3, # 3rd order Runge-Kutta time-stepping
@@ -79,7 +80,9 @@ function KH_from_params(nu, gred, delta, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out
     uᵢ(x, z) = 0 # originally was tanh.(z) + u_init(x, z) + sqrt(enoise) * randn()
     vᵢ(x, z) = 0
     wᵢ(x, z) = w_init(x, z) + sqrt(enoise) * randn()
-    bᵢ(x, z) = gred/2 * tanh.(z/delta) + b_init(x, z) + gred * sqrt(enoise) * randn()
+    bᵢ(x, z) = gred * tanh.(z/delta) + b_init(x, z) + gred * sqrt(enoise) * randn()
+    # piecewise linear version of the bouyancy profile (for testing)
+    #bᵢ(x, z) = gred/2 * (z/delta) .* (abs.(z) .<= delta) + gred/2 * sign.(z) .* (abs.(z) .> delta) + b_init(x, z) + gred * sqrt(enoise) * randn()
 
     # Send the initial conditions to the model to initialize the variables
     set!(model, u=uᵢ, v=vᵢ, w=wᵢ, b=bᵢ)
@@ -96,6 +99,19 @@ function KH_from_params(nu, gred, delta, Pr, Lz, Nx, Nz, enoise, T, lin_stab_out
 
     # Now, we create a 'simulation' to run the model for a specified length of time
     simulation = Simulation(model, Δt=initial_Δt, stop_time=T)
+
+    # Optionally rotate the domain back to horizontal after the requested nondimensional time.
+    if rotate_back_to_horizontal
+        tilt_reset = Ref(false)
+        update_domain_angle!(sim) = begin
+            if !tilt_reset[] && sim.model.clock.time >= rotation_time
+                sim.model.buoyancy = BuoyancyForce(BuoyancyTracer(), gravity_unit_vector=(0.0, 0.0, -1.0))
+                tilt_reset[] = true
+            end
+            return nothing
+        end
+        simulation.callbacks[:update_domain_angle] = Callback(update_domain_angle!, IterationInterval(1))
+    end
 
     # TimeStepWizard is a callback that adjusts the timestep during the simulation
     wizard = TimeStepWizard(cfl=0.8, diffusive_cfl=0.8, max_change=1.2, max_Δt=max_Δt)

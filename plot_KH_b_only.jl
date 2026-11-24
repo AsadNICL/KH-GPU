@@ -1,6 +1,14 @@
+using Plots
+using JLD2
+using Printf
+using Oceananigans
+
 # Reads in the JLD2 output written by KH_from_params.jl and saves a buoyancy-only animation
 # (lighter alternative to plot_KH.jl which also plots log10(chi)).
-function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animation=true, save_ri_re=true, ri_re_filename="Ri_vs_Re.png")
+# If centered_x_window is false, show the full horizontal domain. If true,
+# show only the central window x ∈ [-20, 20] (the historical default behaviour).
+function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animation=true, save_ri_re=true,
+    ri_re_filename="Ri_vs_Re.png", centered_x_window=true)
 
     @info "Generating plots..."
     plot_start_time = time_ns()
@@ -12,8 +20,8 @@ function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animatio
     # Load in coordinate arrays
     # We do this separately for each variable since Oceananigans uses a staggered grid
     xb, yb, zb = nodes(b_ic)
-    xlims = (minimum(xb), maximum(xb))
-    ylims = (minimum(zb), maximum(zb))
+    full_x_lims = (minimum(xb), maximum(xb))
+    z_lims = (minimum(zb), maximum(zb))
 
     Lx = maximum(xb) - minimum(xb)
     x_inds = findall(abs.(xb) .<= Lx / 20)
@@ -129,18 +137,35 @@ function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animatio
         
         # Use global limits for consistent visualization across all frames
         b_lims = (b_global_min, b_global_max)
-        #x_lims = (minimum(xb), maximum(xb))
         x_center = (minimum(xb) + maximum(xb)) / 2
-        x_lims = (x_center - 20, x_center + 20)
-        z_lims = (minimum(zb), maximum(zb))
-        
-        # Create plots with Plots.jl syntax
-        b_xz_plot = heatmap(xb, zb, b_xz', color = :viridis, xlabel = "x", ylabel = "z", aspect_ratio = :equal, xlims = x_lims, ylims = z_lims, clims = b_lims, title=b_title); 
-  
+        x_lims = centered_x_window ? (x_center - 20, x_center + 20) : full_x_lims
+
+        # Reduce the plot padding as much as possible while keeping labels readable.
+        # Increase the font size for the centered-window view so the axes and tick labels remain clear.
+        label_font = centered_x_window ? 18 : 12
+        tick_font = centered_x_window ? 14 : 10
+        title_font = centered_x_window ? 18 : 12
+
+        b_xz_plot = heatmap(xb, zb, b_xz',
+            color = :viridis,
+            xlabel = "x",
+            ylabel = "z",
+            aspect_ratio = :equal,
+            xlims = x_lims,
+            ylims = z_lims,
+            clims = b_lims,
+            title = b_title,
+            size = (1600, 900),
+            left_margin = 0mm,
+            right_margin = 0mm,
+            top_margin = 0mm,
+            bottom_margin = 0mm,
+            guidefontsize = label_font,
+            tickfont = tick_font,
+            titlefontsize = title_font);
+
         # Combine the sub-plots into a single figure (vertical layout)
         plot(b_xz_plot)
-        #plot(b_xz_plot,
-        #    size = (3200, 3200))
 
     end
 
