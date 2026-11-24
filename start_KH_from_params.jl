@@ -35,6 +35,24 @@ include("./lin_stab_from_params.jl")
 include("./KH_from_params.jl")
 include("./plot_KH.jl")
 include("./plot_KH_b_only.jl")  # alternative lighter plotting (b only)
+include("./plot_Ri.jl")
+include("./plot_Ri_vs_Re.jl")
+include("./plot_velocity_magnitude.jl")
+include("./plot_velocity_tanh_fit.jl")
+include("./plot_dudz.jl")
+
+# Toggle whether to visualize the pointwise Ri heatmap animation during each run.
+const generate_Ri_animation = false
+# Toggle whether to visualize the velocity magnitude heatmap animation during each run.
+const generate_velocity_magnitude_animation = false
+# Toggle whether to fit and plot the velocity tanh profile during each run.
+const generate_velocity_tanh_fit = false
+# Toggle whether to visualize du/dz heatmap animation during each run.
+const generate_dudz_animation = false
+# Toggle whether to generate the aggregate Ri vs Re plot after runs.
+const generate_Ri_Re_plot = true
+# Toggle whether to save the animation during each run.
+const save_KH_animation = true
 
 # Read parameter arrays
 include("./params.jl")
@@ -159,7 +177,30 @@ for irun in 1:nruns
 
     # Generate data for the combined plot only
     run_label = make_run_label(gred, delta)
-    Re_vec, Ri_vec = plot_KH_b_only(dns_out_file, Lz, nu; delta=delta, run_label=run_label, save_animation=false, save_ri_re=false)
+    Re_vec, Ri_vec = plot_KH_b_only(dns_out_file, Lz, nu; delta=delta, run_label=run_label, save_animation=save_KH_animation, save_ri_re=false)
+    if generate_Ri_animation
+        plot_Ri(dns_out_file; run_label=run_label, save_animation=true, save_frame=false,
+                heatmap_filename=joinpath(out_path, "Ri_heatmap_$(run_label).mp4"))
+    end
+    if generate_velocity_magnitude_animation
+        label_filename = replace(run_label, ' ' => '_')
+        plot_velocity_magnitude(dns_out_file; run_label=run_label, save_animation=true, save_frame=false,
+                                heatmap_filename=joinpath(out_path, "velocity_magnitude_$(label_filename).mp4"))
+    end
+    if generate_dudz_animation
+        label_filename = replace(run_label, ' ' => '_')
+        plot_dudz(dns_out_file; run_label=run_label, save_animation=true, save_frame=false,
+                  heatmap_filename=joinpath(out_path, "dudz_$(label_filename).mp4"))
+    end
+    if generate_velocity_tanh_fit
+        label_filename = replace(run_label, ' ' => '_')
+        fit_velocity_tanh_profile(dns_out_file;
+                                  x_min=-50.0,
+                                  x_max=50.0,
+                                  prefix=joinpath(out_path, "velocity_tanh_fit_$(label_filename)"),
+                                  plot_u0_filename=joinpath(out_path, "velocity_tanh_fit_$(label_filename)_u0.png"),
+                                  plot_delta_filename=joinpath(out_path, "velocity_tanh_fit_$(label_filename)_delta.png"))
+    end
     push!(all_Reynolds, Re_vec)
     push!(all_Rig, Ri_vec)
     push!(all_labels, run_label)
@@ -167,32 +208,8 @@ for irun in 1:nruns
     @info "-----------------------------------------------"
 end
 
-if length(all_Reynolds) > 1
-    plot_title = sweep_param == :delta ? "Ri vs Reynolds for multiple values of delta" : sweep_param == :gred ? "Ri vs Reynolds for multiple values of reduced gravity" : "Ri vs Reynolds for multiple values of gred and delta"
-    plot_filename = sweep_param == :delta ? "Ri_vs_Re_by_delta.png" : sweep_param == :gred ? "Ri_vs_Re_by_gred.png" : "Ri_vs_Re_by_gred_delta.png"
-    @info "Generating aggregate Ri vs Reynolds plot across $(sweep_param) values..."
-    ncurves = length(all_Reynolds)
-    colors = palette(:auto, ncurves)
-
-    x_min = minimum(filter(>(0), vcat(all_Reynolds...)))
-    x_max = maximum(vcat(all_Reynolds...))
-    y_min = minimum(filter(>(0), vcat(all_Rig...)))
-    y_max = maximum(vcat(all_Rig...))
-
-    agg_plot = plot(xlabel = "Reynolds number", ylabel = "Gradient Richardson number", title = plot_title, legend = :outertopright, seriestype = :path, marker = :none, size = (1400, 900), xrotation = 25, left_margin = 20mm, bottom_margin = 20mm, top_margin = 12mm, right_margin = 12mm, fontsize = 20, color = colors, guidefontsize = 15, legendfontsize = 12)
-    for i in eachindex(all_Reynolds)
-        plot!(agg_plot, all_Reynolds[i], all_Rig[i], lw = 2, seriestype = :path, marker = :none, label = all_labels[i], color = colors[i])
-    end
-    theory_Re = range(x_min, stop=x_max, length=100)
-    for i in eachindex(all_theory_coeffs)
-        theory_coeff = all_theory_coeffs[i]
-        theory_Ri = theory_coeff .* theory_Re .^ (-2)
-        plot!(agg_plot, theory_Re, theory_Ri, lw = 1, ls = :dash, seriestype = :path, marker = :none, label = "theory " * all_labels[i], color = colors[i])
-    end
-    xlims!(agg_plot, (x_min, x_max))
-    ylims!(agg_plot, (y_min, 1.0))
-    savefig(agg_plot, plot_filename)
-    @info "Saved aggregate plot to $(plot_filename)"
+if generate_Ri_Re_plot && length(all_Reynolds) > 1
+    plot_Ri_vs_Re(all_Reynolds, all_Rig, all_labels, all_theory_coeffs, sweep_param)
 end
 
 runs_time = (time_ns() - runs_start_time) * 1e-9

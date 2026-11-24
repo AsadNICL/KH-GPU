@@ -59,6 +59,37 @@ function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animatio
         b_xz = file_xz["timeseries/b/$iter"][:, 1, :];
         t = file_xz["timeseries/t/$iter"];
 
+        # Compute a fitted tanh profile for the streamwise velocity and use its shear in Ri.
+        # This avoids using the instantaneous, noisy finite-difference dudz in each grid cell.
+        u_avg = vec(mean(u_xz[x_inds, :], dims = 1))
+        fitted_u0, fitted_delta = try
+            if isdefined(Main, :tanh_fit_u0_delta)
+                tanh_fit_u0_delta(zb, u_avg; delta_min=1e-3, delta_max=maximum(abs.(zb)))
+            else
+                throw(ErrorException("tanh fitter not available"))
+            end
+        catch
+            (0.0, NaN)
+        end
+
+        if isfinite(fitted_delta) && fitted_delta > 0
+            dudz_profile = fitted_u0 / fitted_delta .* sech.(zb ./ fitted_delta) .^ 2
+        else
+            dudz_profile = similar(zb, Float64)
+            for iz in eachindex(zb)
+                if iz == 1
+                    dz = zb[2] - zb[1]
+                    dudz_profile[iz] = (u_xz[1, 2] - u_xz[1, 1]) / dz
+                elseif iz == length(zb)
+                    dz = zb[end] - zb[end-1]
+                    dudz_profile[iz] = (u_xz[1, end] - u_xz[1, end-1]) / dz
+                else
+                    dz = zb[iz+1] - zb[iz-1]
+                    dudz_profile[iz] = (u_xz[1, iz+1] - u_xz[1, iz-1]) / dz
+                end
+            end
+        end
+
         # Compute Richardson over the requested region and take the RMS
         nx = length(x_inds)
         nz = length(z_inds)
@@ -67,14 +98,25 @@ function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animatio
             for (iz_idx, iz_val) in enumerate(z_inds)
                 dz = zb[iz_val+1] - zb[iz_val-1]
                 dbdz = (b_xz[ix_val, iz_val+1] - b_xz[ix_val, iz_val-1]) / dz
-                dudz = (u_xz[ix_val, iz_val+1] - u_xz[ix_val, iz_val-1]) / dz
+                dudz = dudz_profile[iz_val]
                 Ri_region[ix_idx, iz_idx] = dbdz / (dudz^2 + 1e-12)
             end
         end
         Ri_rms = sqrt(mean(Ri_region .^ 2))
 
-        Urms = sqrt(mean(u_xz.^2) + mean(w_xz.^2))
-        Re_inst = Urms * Lz / nu
+        # Prefer using fitted tanh amplitude `u0` for characteristic velocity when available.
+        # Fallback to instantaneous Urms if the fitter is not available or fails.
+        u0 = try
+            if isdefined(Main, :tanh_fit_u0_delta)
+                fitted_u0
+            else
+                throw(ErrorException("tanh fitter not available"))
+            end
+        catch
+            sqrt(mean(u_xz.^2) + mean(w_xz.^2))
+        end
+        # Use `delta` (model thickness) as the characteristic length scale for Re
+        Re_inst = 1.414*abs(u0) * delta / nu
 
         # Store values for time tracking
         push!(times, t)
@@ -102,8 +144,29 @@ function plot_KH_b_only(filename, Lz, nu; delta=1.0, run_label="", save_animatio
 
     end
 
-   #richplot = plot(times, Rig, xlabel = "Time", ylabel = "Ri", lw = 2, legend = false, title = "Gradient Richardson number at origin", xlims = (0, maximum(times)), ylims = (0, 1), size = (800, 400))
-    Ri_Re_plot = plot(Reynolds, Rig, xlabel = "Reynolds number", ylabel = "Gradient Richardson number", lw = 2, legend = false, title = "Ri vs Reynolds", xscale = :log10, yscale = :log10, xlims = (minimum(Reynolds[Reynolds .> 0]), maximum(Reynolds)), ylims = (minimum(Rig[Rig .> 0]), maximum(Rig)), size = (800, 400))
+    #richplot = plot(times, Rig, xlabel = "Time", ylabel = "Ri", lw = 2, legend = false, title = "Gradient Richardson number at origin", xlims = (0, maximum(times)), ylims = (0, 1), size = (800, 400))
+
+     # Safe axis limits: avoid reducing over empty collections (can happen if values are NaN or non-positive)
+     finite_Re = Reynolds[isfinite.(Reynolds)]
+     pos_Re = finite_Re[finite_Re .> 0]
+     x_min = isempty(pos_Re) ? (isempty(finite_Re) ? 1e-12 : minimum(abs.(finite_Re))) : minimum(pos_Re)
+     x_max = isempty(finite_Re) ? 1.0 : maximum(finite_Re)
+
+     finite_Ri = Rig[isfinite.(Rig)]
+     y_min = isempty(finite_Ri) ? 0.0 : minimum(finite_Ri)
+     y_max = isempty(finite_Ri) ? 1.0 : maximum(finite_Ri)
+
+     Ri_Re_plot = plot(Reynolds, Rig,
+                             xlabel = "Reynolds number",
+                             ylabel = "Gradient Richardson number",
+                             lw = 2,
+                             legend = false,
+                             title = "Ri vs Reynolds",
+                             xscale = :log10,
+                             yscale = :log10,
+                             xlims = (x_min, x_max),
+                             ylims = (y_min, y_max),
+                             size = (800, 400))
 
     close(file_xz)
 

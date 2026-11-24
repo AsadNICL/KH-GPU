@@ -67,23 +67,29 @@ function plot_KH(filename)
         push!(times, t)
 
         # Create titles
-        b_title = @sprintf("negative b, t = %s", round(t));
-        χ_title = @sprintf("log₁₀(χ)");
-        
+        time_label = @sprintf("t = %.2f", t)
+        b_title = @sprintf("negative b, %s", time_label);
+        χ_title = @sprintf("log₁₀(χ), %s", time_label);
+
         # Use global limits for consistent visualization across all frames
         b_lims = (b_global_min, b_global_max)
         χ_lims = (χ_global_min, χ_global_max)
         x_lims = (minimum(xb), maximum(xb))
         z_lims = (minimum(zb), maximum(zb))
-        
+
         # Create plots with Plots.jl syntax
-        b_xz_plot = heatmap(xb, zb, -b_xz', color = :viridis, xlabel = "x", ylabel = "z", aspect_ratio = :equal, xlims = x_lims, ylims = z_lims, clims = b_lims, title=b_title); 
+        b_xz_plot = heatmap(xb, zb, -b_xz', color = :viridis, xlabel = "x", ylabel = "z", aspect_ratio = :equal, xlims = x_lims, ylims = z_lims, clims = b_lims, title=b_title);
         χ_xz_plot = heatmap(xχ, zχ, log10.(abs.(χ_xz') .+ 1e-10), color = :hot, xlabel = "x", ylabel = "z", aspect_ratio = :equal,  xlims = x_lims, ylims = z_lims, clims = χ_lims, title=χ_title);
-        
+
+        # Add a persistent time counter directly on the combined frame.
+        time_text = @sprintf("non-dimensional time: %.2f", t)
+        time_annot = (0.02, 0.97, text(time_text, 12, :white, :left))
+
         # Combine the sub-plots into a single figure (vertical layout)
         plot(b_xz_plot, χ_xz_plot,
             layout = (2, 1),
-            size = (1200, 1200))
+            size = (1200, 1200),
+            annotation = time_annot)
     end
 
     close(file_xz)

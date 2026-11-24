@@ -7,7 +7,7 @@
 # So, if a parameter is given multiple values, all other parameters must either have the same length or length 1
 
 nu_values       = [1/8e5]     # Viscosity
-gred_values      = [0.2,0.4]        # Fixed reduced gravity for delta comparison
+gred_values      = [1.0,2.0]        # Fixed reduced gravity for delta comparison
 delta_values      = [1.0]  # Shear layer thickness values to compare
 Pr_values       = [700]     # Prandtl number
 Lz_values       = [10]       # Domain height
